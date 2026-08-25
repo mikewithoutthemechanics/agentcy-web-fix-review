@@ -14,9 +14,13 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const { name, email, company, phone, engagement, message } = req.body || {};
-  if (!name || !email || !message) {
-    return res.status(400).json({ error: 'Name, email, and message are required' });
+  const { name, email, company, phone, engagement, message, pain, current_process, file_data } = req.body || {};
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required' });
+  }
+  const hasStory = (message && message !== '(via chat)') || pain || (file_data && file_data.length);
+  if (!hasStory) {
+    return res.status(400).json({ error: 'Tell us a little about what you need' });
   }
 
   const lead = {
@@ -25,8 +29,18 @@ export default async function handler(req, res) {
     phone: String(phone || '').slice(0, 60),
     company: String(company || '').slice(0, 200),
     engagement: String(engagement || 'Not sure yet').slice(0, 120),
-    message: String(message).slice(0, 4000),
+    message: String(message || '').slice(0, 4000),
+    pain: String(pain || '').slice(0, 4000),
+    current_process: String(current_process || '').slice(0, 4000),
   };
+
+  // attachments: [{name, mime, data(base64)}] — max 3, 3MB each, forwarded to team email
+  const ALLOWED = /\.(pdf|docx?|txt|md|csv|xlsx|png|jpe?g)$/i;
+  const attachments = (Array.isArray(file_data) ? file_data : []).slice(0, 3).map(f => ({
+    filename: String(f.name || 'attachment').slice(0, 120).replace(/[^\w.\- ()]/g, '_'),
+    content: String(f.data || ''),
+    content_type: String(f.mime || 'application/octet-stream').slice(0, 100),
+  })).filter(a => a.content && ALLOWED.test(a.filename) && Buffer.byteLength(a.content, 'base64') <= 4_100_000);
 
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -45,15 +59,18 @@ export default async function handler(req, res) {
         reply_to: lead.email,
         subject: `New inquiry from ${lead.name}${lead.company && lead.company !== 'Not provided' ? ` (${lead.company})` : ''}`,
         html: `
-          <h2>New Booking / Contact Submission</h2>
+          <h2>New ${lead.engagement === 'Request a call' ? 'Call Request' : 'Booking / Contact'} Submission</h2>
           <p><strong>Name:</strong> ${esc(lead.name)}</p>
           <p><strong>Email:</strong> ${esc(lead.email)}</p>
           ${lead.phone ? `<p><strong>Phone:</strong> ${esc(lead.phone)}</p>` : ''}
           ${lead.company ? `<p><strong>Company:</strong> ${esc(lead.company)}</p>` : ''}
           ${lead.engagement ? `<p><strong>Engagement:</strong> ${esc(lead.engagement)}</p>` : ''}
-          <p><strong>Message:</strong></p>
-          <p>${esc(lead.message).replace(/\n/g, '<br>')}</p>
+          ${lead.pain ? `<p><strong>Tired of dealing with:</strong></p><p>${esc(lead.pain).replace(/\n/g, '<br>')}</p>` : ''}
+          ${lead.current_process ? `<p><strong>Current process:</strong></p><p>${esc(lead.current_process).replace(/\n/g, '<br>')}</p>` : ''}
+          ${lead.message && lead.message !== '(via chat)' ? `<p><strong>Message:</strong></p><p>${esc(lead.message).replace(/\n/g, '<br>')}</p>` : ''}
+          ${attachments.length ? `<p><strong>📎 Attachments:</strong> ${attachments.map(a => esc(a.filename)).join(', ')}</p>` : ''}
         `,
+        ...(attachments.length ? { attachments } : {}),
       }),
     });
     emailOk = response.ok;
