@@ -1,3 +1,4 @@
 node_modules/
 .vercel
 .env.local
+_n8n_*.json
