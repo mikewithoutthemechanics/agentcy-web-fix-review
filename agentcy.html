@@ -903,14 +903,34 @@ if(modal){const cb=modal.querySelector(".agentcy-book-close");if(cb)cb.onclick=c
 document.addEventListener("keydown",function(e){if(modal&&e.key==="Escape"&&!modal.hidden)closeChat()});
 sendBtn.onclick=function(){const v=input.value;input.value="";submit(v)};
 input.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();const v=input.value;input.value="";submit(v)}});
-function openCal(){try{window.Cal("init","agentcy",{origin:"https://cal.agentcy.co.za"});window.Cal("inline",{elementOrSelector:"#cal-embed",config:{layout:"month_view",theme:"light"},calLink:"team/agentcy/audit",origin:"https://cal.agentcy.co.za"});window.Cal("ui",{"styles":{"branding":{"brandColor":"#dd5c3f"},"baseColor":"#111","highlightColor":"#dd5c3f"},"hideEventTypeDetails":false,"layout":"month_view"})}catch(e){}
- modal.hidden=false;document.getElementById("calWrap").style.display="block";document.getElementById("chatWrap").style.display="none"}
+let calInited=false;
+function openCal(){modal.hidden=false;document.getElementById("calWrap").style.display="block";document.getElementById("chatWrap").style.display="none";
+ if(calInited)return;calInited=true;
+ try{window.Cal("inline",{elementOrSelector:"#cal-embed",config:{layout:"month_view",theme:"light"},calLink:"team/agentcy/audit",origin:"https://cal.agentcy.co.za"});window.Cal("ui",{"styles":{"branding":{"brandColor":"#dd5c3f"},"baseColor":"#111","highlightColor":"#dd5c3f"},"hideEventTypeDetails":false,"layout":"month_view"})}catch(e){console.warn("cal embed",e)}}
 document.querySelectorAll("a,button").forEach(function(el){const t=(el.textContent||"").toLowerCase();
  if(/apply to work/.test(t)){el.onclick=function(e){e.preventDefault();openChat("idea")};if(el.tagName==="A")el.href="#book-audit"}
  else if(/free audit|starter audit|schedule.*session|book.*consultation|talk to an engineer|claim.*audit/.test(t)){
  el.onclick=function(e){e.preventDefault();openCal()};if(el.tagName==="A")el.href="#book-audit"}});
 })();
-</script><script src="https://cal.agentcy.co.za/embed/embed.js" async></script>
+</script><script>
+(function (C, A, L) {
+  let p = function (a, ar) { a.q.push(ar); };
+  let d = C.document;
+  C.Cal = C.Cal || function () {
+    let cal = C.Cal; let ar = arguments;
+    if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild(d.createElement("script")).src = A; cal.loaded = true; }
+    if (ar[0] === L) {
+      const api = function () { p(api, ar); };
+      api.q = api.q || [];
+      if (typeof ar[1] !== "undefined") { cal.ns[ar[1]] = api; }
+      p(api, ar);
+      return api;
+    }
+    p(cal, ar); return cal;
+  };
+})(window, "https://cal.agentcy.co.za/embed/embed.js", "init");
+window.Cal("init", "agentcy", { origin: "https://cal.agentcy.co.za" });
+</script>
 <style id="agentcy-imsg-style">
 .agentcy-booking-card{width:min(430px,94vw);padding:0;overflow:hidden;background:#fff}
 .agentcy-imsg{display:flex;flex-direction:column;height:min(600px,78vh);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif}
