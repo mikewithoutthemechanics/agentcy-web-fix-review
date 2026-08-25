@@ -827,8 +827,8 @@ micBtn.onclick=function(){
    if(blob.size<1200){botSay("That was too short — hold the mic and speak for a few seconds 🎙️",400);return}
    addBubble("🎤 Voice note ("+Math.max(1,recSeconds)+"s)",true,true);
    busy=true;input.disabled=true;sendBtn.disabled=true;typing(true);
-   const fd=new FormData();fd.append("audio",blob,"voice.webm");
-   fetch("/api/transcribe",{method:"POST",body:fd})
+   const b64=await new Promise(function(res){const fr=new FileReader();fr.onload=function(){res(String(fr.result).split(",")[1])};fr.readAsDataURL(blob)});
+   fetch("/api/transcribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({audio_base64:b64,mime:blob.type||"audio/webm"})})
     .then(function(r){if(!r.ok)throw new Error("t"+r.status);return r.json()})
     .then(function(j){
       typing(false);

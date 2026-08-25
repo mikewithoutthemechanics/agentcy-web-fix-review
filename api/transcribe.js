@@ -1,5 +1,6 @@
 // Vercel Serverless Function — voice note transcription via Groq Whisper
-// Accepts multipart/form-data: audio=<file>. Returns { text }.
+// Accepts JSON: { audio_base64: string, mime?: string }. Returns { text }.
+// (Vercel Node functions auto-parse JSON bodies; multipart is not available.)
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,18 +10,23 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const form = await req.formData();
-    const file = form.get('audio');
-    if (!file || typeof file === 'string') {
-      return res.status(400).json({ error: 'Missing audio file' });
+    const { audio_base64, mime } = req.body || {};
+    if (!audio_base64) {
+      return res.status(400).json({ error: 'Missing audio_base64' });
     }
-    if (file.size > 4 * 1024 * 1024) {
-      return res.status(413).json({ error: 'Voice note too large (max ~4MB / 90s)' });
+    const buf = Buffer.from(audio_base64, 'base64');
+    if (!buf || buf.length < 800) {
+      return res.status(400).json({ error: 'Audio too short' });
+    }
+    if (buf.length > 4 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Voice note too large (max ~4MB)' });
     }
 
+    const type = (mime || 'audio/webm').split(';')[0];
+    const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') || type.includes('m4a') ? 'm4a' : type.includes('wav') ? 'wav' : type.includes('mpeg') ? 'mp3' : 'webm';
+
     const fd = new FormData();
-    const ext = (file.name || 'voice.webm').split('.').pop();
-    fd.append('file', file, 'voice-note.' + (ext || 'webm'));
+    fd.append('file', new Blob([buf], { type }), 'voice-note.' + ext);
     fd.append('model', 'whisper-large-v3-turbo');
     fd.append('response_format', 'json');
 
@@ -32,12 +38,12 @@ export default async function handler(req, res) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      console.error('Groq transcription error:', r.status, j);
+      console.error('Groq transcription error:', r.status, JSON.stringify(j).slice(0, 300));
       return res.status(502).json({ error: 'Transcription failed' });
     }
     return res.status(200).json({ text: (j.text || '').trim() });
   } catch (err) {
-    console.error('transcribe exception:', err);
+    console.error('transcribe exception:', err && err.message, err && err.stack);
     return res.status(500).json({ error: 'Server error' });
   }
 }
