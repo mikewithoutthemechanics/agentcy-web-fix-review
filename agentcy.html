@@ -706,9 +706,11 @@ margin: 0rem !important;
       <div class="agentcy-imsg-thread" id="imsgThread" aria-live="polite"></div>
       <div class="agentcy-imsg-chips" id="imsgChips" hidden></div>
       <div class="agentcy-imsg-bar">
-        <input type="text" id="imsgInput" placeholder="Type a message" autocomplete="off"/>
+        <input type="text" id="imsgInput" placeholder="Type a message" autocomplete="off" autocapitalize="sentences"/>
+        <button id="imsgMic" aria-label="Record a voice note" title="Record a voice note">&#127908;</button>
         <button id="imsgSend" aria-label="Send">&#8593;</button>
       </div>
+      <div id="imsgRec" class="agentcy-imsg-rec" hidden><span class="agentcy-imsg-rec-dot"></span>Recording&hellip; <span id="imsgRecTime">0s</span> <button id="imsgRecStop" type="button">Send &#8594;</button></div>
     </div>
   </div>
 </div><style id="agentcy-content-refinement">
@@ -758,19 +760,22 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script><script id="agentcy-booking-script">(function(){
 const modal=document.getElementById("agentcyBooking"),thread=document.getElementById("imsgThread"),
-chips=document.getElementById("imsgChips"),input=document.getElementById("imsgInput"),sendBtn=document.getElementById("imsgSend");
+chips=document.getElementById("imsgChips"),input=document.getElementById("imsgInput"),sendBtn=document.getElementById("imsgSend"),
+micBtn=document.getElementById("imsgMic"),recPill=document.getElementById("imsgRec"),recTime=document.getElementById("imsgRecTime"),recStop=document.getElementById("imsgRecStop");
 let data={},step=0,busy=false;
+let mediaStream=null,mediaRec=null,recChunks=[],recTimer=null,recSeconds=0,recForStep=null;
 const STEPS=[
- {key:"_intro",bot:"Howzit \u{1F44B} I'm the Agentcy bookings assistant. I'll set you up with a free audit \u2014 takes 30 seconds."},
- {key:"name",q:"First up \u2014 what's your name?",validate:function(v){return v.trim().length>=2},invalid:"Just a name works \u2014 what should we call you?"},
- {key:"email",q:"Nice to meet you, {name}! What's your work email?",validate:function(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)},invalid:"Hmm, that doesn't look like an email \u2014 mind double-checking?"},
- {key:"phone",q:"Best number for WhatsApp?",optional:true},
+ {key:"_intro",bot:"Howzit 👋 I'm the Agentcy bookings assistant. I'll set you up with a free audit — takes 30 seconds."},
+ {key:"name",q:"First up — what's your name?",validate:function(v){return v.trim().length>=2},invalid:"Just a name works — what should we call you?"},
+ {key:"email",q:"Nice to meet you, {name}! Tap a suggestion or type your work email:",validate:function(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)},invalid:"Hmm, that doesn't look like an email — mind double-checking?"},
+ {key:"phone",q:"Best number for WhatsApp? (autofill works here too)",optional:true},
  {key:"company",q:"And the business called?",optional:true},
  {key:"engagement",q:"How would you prefer to meet?",chips:["Remote audit call","On-site visit (KZN / Garden Route)","Not sure yet"]},
- {key:"message",q:"Last one \u2014 what should the audit focus on?",placeholder:"Workflows, WhatsApp, integrations...",chips:["WhatsApp leads","Workflow automation","AI integrations","Not sure yet"],optional:true}
+ {key:"message",q:"Last one — what's the one thing you'd love to NEVER deal with again? Type it or hold the mic and tell me 🎤",placeholder:"e.g. missed WhatsApp leads, quoting chaos...",voiceFirst:true,optional:true}
 ];
-function esc(s){return String(s)}
-function addBubble(text,me){const row=document.createElement("div");row.className="agentcy-imsg-row"+(me?" me":"");const b=document.createElement("div");b.className="agentcy-imsg-bubble";b.textContent=text;row.appendChild(b);thread.appendChild(row);thread.scrollTop=thread.scrollHeight}
+function addBubble(text,me,voice){const row=document.createElement("div");row.className="agentcy-imsg-row"+(me?" me":"");const b=document.createElement("div");b.className="agentcy-imsg-bubble";
+ if(voice){const v=document.createElement("span");v.className="agentcy-imsg-voice";v.textContent="🎤 "+text;b.appendChild(v)}else{b.textContent=text}
+ row.appendChild(b);thread.appendChild(row);thread.scrollTop=thread.scrollHeight}
 function typing(on){let t=thread.querySelector(".agentcy-imsg-typing-row");
  if(on){if(!t){t=document.createElement("div");t.className="agentcy-imsg-row agentcy-imsg-typing-row";t.innerHTML='<div class="agentcy-imsg-bubble agentcy-imsg-typing"><i></i><i></i><i></i></div>';thread.appendChild(t);thread.scrollTop=thread.scrollHeight}}
  else if(t){t.remove()}}
@@ -784,27 +789,66 @@ function runStep(){busy=true;input.disabled=true;sendBtn.disabled=true;
  botSay(text).then(function(){
   if(st.bot&&!st.q){step++;runStep();return}
   if(st.chips)showChips(st.chips);
-  input.placeholder=st.placeholder||(st.optional?"Optional \u2014 or press send to skip":"Type a message");
+  input.placeholder=st.placeholder||(st.optional?"Optional — or press send to skip":"Type a message");
   input.disabled=false;sendBtn.disabled=false;if(window.matchMedia("(min-width:481px)").matches)input.focus();busy=false})}
-function submit(val){val=(val||"").trim();
+function submit(val,voice){val=(val||"").trim();
  if(busy)return;
  const st=STEPS[step];if(!st)return;
  if(!val&&st.optional){data[st.key]=""}
  else{
-  if(st.validate&&!st.validate(val)){addBubble(val,true);botSay(st.invalid||"Let's try that again?",400);return}
+  if(st.validate&&!st.validate(val)){addBubble(val,true,voice);botSay(st.invalid||"Let's try that again?",400);return}
   data[st.key]=val}
- addBubble(val||(st.optional?"\u2014 skipped \u2014":""),true);
+ addBubble(val||(st.optional?"— skipped —":""),true,voice);
  showChips(null);nextStep()}
-function finish(){busy=true;input.disabled=true;sendBtn.disabled=true;input.placeholder="";
- botSay("Perfect \u2014 sending that through now \uD83D\uDCE8").then(function(){
- fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:data.name,email:data.email,phone:data.phone||"",company:data.company||"",engagement:data.engagement||"",message:data.message||"(via chat)"})})
+function finish(){busy=true;input.disabled=true;sendBtn.disabled=true;micBtn.disabled=true;input.placeholder="";
+ botSay("Perfect — sending that through now 📨").then(function(){
+ const body={name:data.name,email:data.email,phone:data.phone||"",company:data.company||"",engagement:data.engagement||"",message:data.message||"(via chat)"};
+ fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
  .then(function(r){if(!r.ok)throw new Error("bad status");return r.json()})
- .then(function(){return botSay("\u2705 Done"+(data.name?" "+data.name:"")+"! We'll WhatsApp or email you within one business day to lock in your free audit.")})
- .then(function(){addBubble("You can close this chat. \u{1F44B}",false)})
- .catch(function(){return botSay("\u26A0 Something broke on our side. Please WhatsApp +27 83 791 5429 or email ai@agentcy.co.za \u2014 sorry about that!")})})}
+ .then(function(){return botSay("✅ Done"+(data.name?" "+data.name.split(" ")[0]:"")+"! We'll WhatsApp or email you within one business day to lock in your free audit.")})
+ .then(function(){addBubble("You can close this chat. 👋",false)})
+ .catch(function(){return botSay("⚠ Something broke on our side. Please WhatsApp +27 83 791 5429 or email ai@agentcy.co.za — sorry about that!")})})}
+/* ---- voice notes ---- */
+let recForStepSend=true;
+function stopRec(send){if(!mediaRec)return;recForStepSend=send;try{mediaRec.stop()}catch(e){}}
+micBtn.onclick=function(){
+ if(mediaRec){stopRec(true);return}
+ if(!navigator.mediaDevices||!window.MediaRecorder){botSay("Voice notes aren't supported in this browser — type it instead?",400);return}
+ navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+  mediaStream=stream;recChunks=[];recSeconds=0;recForStep=STEPS[step];
+  mediaRec=new MediaRecorder(stream);
+  mediaRec.ondataavailable=function(e){if(e.data&&e.data.size)recChunks.push(e.data)};
+  mediaRec.onstop=function(){
+   stream.getTracks().forEach(function(t){t.stop()});
+   recPill.hidden=true;micBtn.classList.remove("recording");clearInterval(recTimer);
+   const blob=new Blob(recChunks,{type:mediaRec.mimeType||"audio/webm"});
+   mediaRec=null;
+   if(!recForStepSend){return}
+   if(blob.size<1200){botSay("That was too short — hold the mic and speak for a few seconds 🎙️",400);return}
+   addBubble("🎤 Voice note ("+Math.max(1,recSeconds)+"s)",true,true);
+   busy=true;input.disabled=true;sendBtn.disabled=true;typing(true);
+   const fd=new FormData();fd.append("audio",blob,"voice.webm");
+   fetch("/api/transcribe",{method:"POST",body:fd})
+    .then(function(r){if(!r.ok)throw new Error("t"+r.status);return r.json()})
+    .then(function(j){
+      typing(false);
+      const text=(j.text||"").trim();
+      if(!text){botSay("Couldn't hear that clearly — try once more or type it?",400);busy=false;input.disabled=false;sendBtn.disabled=false;return}
+      submit(text,true)})
+    .catch(function(){
+      typing(false);
+      botSay("Transcription hiccup on our side — type it quickly instead?",400);
+      busy=false;input.disabled=false;sendBtn.disabled=false});
+  };
+  mediaRec.start();
+  recPill.hidden=false;micBtn.classList.add("recording");
+  recTimer=setInterval(function(){recSeconds++;recTime.textContent=recSeconds+"s";if(recSeconds>=60){stopRec(true)}},1000);
+ }).catch(function(){botSay("I need mic permission to hear you — or just type it 🙌",400)})};
+recStop.onclick=function(){stopRec(true)};
+/* ---- chat plumbing ---- */
 function openChat(){modal.hidden=false;document.body.style.overflow="hidden";
- thread.innerHTML="";data={};busy=false;chips.hidden=true;step=0;runStep()}
-function closeChat(){modal.hidden=true;document.body.style.overflow=""}
+ thread.innerHTML="";data={};busy=false;chips.hidden=true;step=0;micBtn.disabled=false;runStep()}
+function closeChat(){if(mediaRec)stopRec(false);modal.hidden=true;document.body.style.overflow=""}
 if(modal){const cb=modal.querySelector(".agentcy-book-close");if(cb)cb.onclick=closeChat;modal.onclick=function(e){if(e.target===modal)closeChat()}}
 document.addEventListener("keydown",function(e){if(modal&&e.key==="Escape"&&!modal.hidden)closeChat()});
 sendBtn.onclick=function(){const v=input.value;input.value="";submit(v)};
@@ -843,4 +887,13 @@ document.querySelectorAll("a,button").forEach(function(el){const t=(el.textConte
 #imsgSend{width:36px;height:36px;border-radius:50%;border:none;background:linear-gradient(180deg,#37bdff,#0a84ff);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 #imsgSend:disabled{opacity:.35;cursor:default}
 @media(max-width:480px){.agentcy-booking-card{width:100vw;height:100dvh;max-height:none;border-radius:0}.agentcy-imsg{height:100dvh}}
+
+#imsgMic{width:36px;height:36px;border-radius:50%;border:none;background:#f2f2f7;color:#0a84ff;font-size:16px;cursor:pointer;flex-shrink:0}
+#imsgMic.recording{background:#ff3b30;color:#fff;animation:aimsg-pulse 1.2s infinite}
+@keyframes aimsg-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.5)}50%{box-shadow:0 0 0 8px rgba(255,59,48,0)}}
+.agentcy-imsg-rec{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fff5f5;border-top:1px solid #ffe0de;font-size:13.5px;color:#c22;flex:0 0 auto}
+.agentcy-imsg-rec-dot{width:9px;height:9px;border-radius:50%;background:#ff3b30;display:inline-block;animation:aimsg-blink 1s infinite}
+@keyframes aimsg-blink{50%{opacity:.25}}
+#imsgRecStop{margin-left:auto;border:none;background:#0a84ff;color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.agentcy-imsg-bubble .agentcy-imsg-voice{display:inline-flex;align-items:center;gap:6px;font-style:italic;opacity:.92}
 </style></body></html>
