@@ -1,0 +1,25 @@
+# Agentcy
+
+> Agentcy — AI Engineers on Site | Ballito & Knysna | South Africa
+
+Agentcy sends AI engineers into South African businesses to eliminate operational drag. We audit, architect, and automate workflows, AI integrations, and custom tools. Founded 2023, working nationally across South Africa.
+
+## Services
+- AI Integration: embed AI into your existing tools as a working layer
+- Workflow Automation: map end-to-end processes, eliminate manual handoffs
+- Custom Tools: internal dashboards, calculators, trackers built to fit
+- Agentic Solutions: autonomous agents that monitor, act, escalate
+- WhatsApp CRM Setup: automated replies, lead capture, follow-up, CRM sync
+- Knowledge Base & SOP Documentation
+
+## Process
+01 Discovery & Audit → 02 Automation Blueprint → 03 Build & Integration → 04 Deployment & Scaling
+
+## Pricing
+- Starter Audit: R8,000 once-off
+- Growth: R18,999/month (R17,099/month annual)
+
+## Contact
+- Email: ai@agentcy.co.za
+- WhatsApp: +27 83 791 5429 (https://wa.me/27837915429)
+- Website: https://agentcy.co.za
